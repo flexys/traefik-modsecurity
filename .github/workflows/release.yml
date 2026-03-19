@@ -1,0 +1,29 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Trigger on version tags like v1.7.1
+  workflow_dispatch:  # Keep manual trigger option
+
+permissions:
+  contents: write  # Required for creating releases
+  
+jobs:
+  release:
+    name: Release from Tag
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Release ${{ github.ref_name }}"  # e.g. "Release v1.7.1"
+          tag_name: ${{ github.ref_name }}        # e.g. "v1.7.1"  
+          generate_release_notes: true
+          make_latest: true
