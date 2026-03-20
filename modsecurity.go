@@ -78,7 +78,7 @@ type Modsecurity struct {
 // It returns an HTTP handler that can be integrated into the Traefik middleware chain.
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
 	if len(config.ModSecurityUrl) == 0 {
-		return nil, fmt.Errorf("modSecurityUrl cannot be empty")
+		return nil, fmt.Errorf("ModSecurityUrl cannot be empty!")
 	}
 
 	// Use a custom client with configurable timeout
