@@ -146,7 +146,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		maxBodySizeBytesForPool:        config.MaxBodySizeBytesForPool,
 		ignoreBodyForVerbs:             createIgnoreBodyMap(config.IgnoreBodyForVerbs),
 		ignoreBodyForVerbsDeny:         config.IgnoreBodyForVerbsDeny,
-		detectOnly:                     config.detectOnly,
+		detectOnly:                     config.DetectOnly,
 	}, nil
 }
 
