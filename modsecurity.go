@@ -38,6 +38,8 @@ type Config struct {
 	MaxBodySizeBytesForPool        int64    `json:"maxBodySizeBytesForPool,omitempty"`        // Threshold above which to use ad-hoc allocation instead of pool (default 4MB)
 	IgnoreBodyForVerbs             []string `json:"ignoreBodyForVerbs,omitempty"`             // HTTP verbs for which body should not be read (default: HEAD, GET, DELETE)
 	IgnoreBodyForVerbsDeny         bool     `json:"ignoreBodyForVerbsDeny,omitempty"`         // If true, reject requests with body for verbs in IgnoreBodyForVerbs
+	DetectOnly			           bool     `json:"detectOnly,omitempty"`         			  // If true, pass all blocked modsec requests
+
 }
 
 // CreateConfig creates the default plugin configuration.
@@ -54,6 +56,8 @@ func CreateConfig() *Config {
 		MaxBodySizeBytesForPool:        5 * 1024 * 1024,                                                  // 5 MB default for pool threshold
 		IgnoreBodyForVerbs:             []string{"HEAD", "GET", "DELETE", "OPTIONS", "TRACE", "CONNECT"}, // Default verbs to ignore body
 		IgnoreBodyForVerbsDeny:         false,                                                            // Default: permissive body validation
+		DetectOnly:                     false,
+
 	}
 }
 
@@ -72,6 +76,8 @@ type Modsecurity struct {
 	maxBodySizeBytesForPool        int64           // Threshold above which to use ad-hoc allocation instead of pool
 	ignoreBodyForVerbs             map[string]bool // HTTP verbs for which body should not be read
 	ignoreBodyForVerbsDeny         bool            // If true, reject requests with body for verbs in ignoreBodyForVerbs
+	detectOnly         			   bool
+
 }
 
 // New creates a new Modsecurity plugin with the given configuration.
@@ -140,6 +146,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		maxBodySizeBytesForPool:        config.MaxBodySizeBytesForPool,
 		ignoreBodyForVerbs:             createIgnoreBodyMap(config.IgnoreBodyForVerbs),
 		ignoreBodyForVerbsDeny:         config.IgnoreBodyForVerbsDeny,
+		detectOnly:                     config.detectOnly,
 	}, nil
 }
 
@@ -306,7 +313,7 @@ func (a *Modsecurity) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= 400 && a.detectOnly != true {
 		// Add remediation header to request if configured (for logging purposes)
 		if a.modSecurityStatusRequestHeader != "" {
 			req.Header.Set(a.modSecurityStatusRequestHeader, "blocked")
