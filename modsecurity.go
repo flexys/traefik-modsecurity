@@ -281,6 +281,17 @@ func (a *Modsecurity) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		proxyReq.Header[h] = val
 	}
 
+	// This is a separate HTTP call to the WAF rather than a passthrough proxy hop, so req.Header
+	// won't yet carry any X-Forwarded-For Traefik itself would add later when forwarding to the real
+	// backend. Append req.RemoteAddr (the peer Traefik sees) the same way Go's own reverse proxy does,
+	// so the WAF can resolve the real client IP instead of seeing this middleware's own connection.
+	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		if prior := proxyReq.Header.Get("X-Forwarded-For"); prior != "" {
+			clientIP = prior + ", " + clientIP
+		}
+		proxyReq.Header.Set("X-Forwarded-For", clientIP)
+	}
+
 	resp, err := a.httpClient.Do(proxyReq)
 	if err != nil {
 		if a.unhealthyWafBackOffPeriodSecs > 0 {
