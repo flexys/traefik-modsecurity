@@ -10,7 +10,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -570,4 +573,92 @@ func TestModsecurity_BodySizeLimit_20MB_LargeBodies(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestModsecurity_ReleasesWafConnectionBeforeNext reproduces the bug where the WAF response
+// body was only closed (via defer) after next.ServeHTTP returned. A long-lived downstream
+// request such as an SSE stream then held its WAF connection - and its MaxConnsPerHost slot -
+// for its full duration, so other requests on the same router queued waiting for a slot.
+func TestModsecurity_ReleasesWafConnectionBeforeNext(t *testing.T) {
+	wafMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("WAF OK"))
+	}))
+	defer wafMock.Close()
+
+	release := make(chan struct{})
+	streaming := make(chan struct{})
+	var calls int32
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			// First request behaves like an SSE stream: it stays open until released.
+			close(streaming)
+			<-release
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	config := &Config{
+		TimeoutMillis:   5000,
+		ModSecurityUrl:  wafMock.URL,
+		MaxConnsPerHost: 1,
+	}
+	middleware, err := New(context.Background(), next, config, "modsecurity-conn-release-test")
+	assert.NoError(t, err)
+
+	go func() {
+		req := httptest.NewRequest(http.MethodGet, "http://proxy.com/updates", nil)
+		middleware.ServeHTTP(httptest.NewRecorder(), req)
+	}()
+	defer close(release)
+	<-streaming
+
+	done := make(chan int, 1)
+	go func() {
+		req := httptest.NewRequest(http.MethodGet, "http://proxy.com/read", nil)
+		rw := httptest.NewRecorder()
+		middleware.ServeHTTP(rw, req)
+		done <- rw.Code
+	}()
+
+	select {
+	case code := <-done:
+		assert.Equal(t, http.StatusOK, code)
+	case <-time.After(2 * time.Second):
+		t.Fatal("second request blocked waiting for a WAF connection held by an in-flight downstream request")
+	}
+}
+
+// TestModsecurity_ReusesWafConnection guards against releasing the WAF connection by closing
+// the response body unread: Go then discards the connection instead of returning it to the
+// idle pool, and every request dials the WAF afresh.
+func TestModsecurity_ReusesWafConnection(t *testing.T) {
+	var mu sync.Mutex
+	remoteAddrs := map[string]bool{}
+	wafMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		remoteAddrs[r.RemoteAddr] = true
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("WAF OK"))
+	}))
+	defer wafMock.Close()
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	config := &Config{
+		TimeoutMillis:  2000,
+		ModSecurityUrl: wafMock.URL,
+	}
+	middleware, err := New(context.Background(), next, config, "modsecurity-conn-reuse-test")
+	assert.NoError(t, err)
+
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodGet, "http://proxy.com/read", nil)
+		middleware.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	assert.Len(t, remoteAddrs, 1, "sequential requests should reuse one WAF connection")
 }

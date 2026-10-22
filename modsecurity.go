@@ -322,9 +322,8 @@ func (a *Modsecurity) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, "", http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
-
 	if resp.StatusCode >= 400 && a.detectOnly != true {
+		defer resp.Body.Close()
 		// Add remediation header to request if configured (for logging purposes)
 		if a.modSecurityStatusRequestHeader != "" {
 			req.Header.Set(a.modSecurityStatusRequestHeader, "blocked")
@@ -332,6 +331,12 @@ func (a *Modsecurity) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		forwardResponse(resp, rw)
 		return
 	}
+
+	// Release the WAF connection before calling next: deferring the close would hold it,
+	// and its MaxConnsPerHost slot, for the whole downstream request (a full SSE stream).
+	// Drain first so the connection goes back to the idle pool instead of being discarded.
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+	resp.Body.Close()
 
 	// Only restore req.Body when actually passing through and body was read
 	if body != nil {
