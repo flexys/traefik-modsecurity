@@ -9,12 +9,12 @@ services:
       - "--accesslog=true"
       - --api.dashboard=true
       - --api.insecure=true
-      - --experimental.localPlugins.traefik-modsecurity.moduleName=github.com/david-garcia-garcia/traefik-modsecurity
+      - --experimental.localPlugins.traefik-modsecurity.moduleName=github.com/flexys/traefik-modsecurity
       - --providers.docker=true
       - --entrypoints.http.address=:80
     volumes:
       - '/var/run/docker.sock:/var/run/docker.sock'
-      - '.:/plugins-local/src/github.com/david-garcia-garcia/traefik-modsecurity'
+      - '.:/plugins-local/src/github.com/flexys/traefik-modsecurity'
     labels:
       - traefik.enable=true
       - traefik.http.services.traefik.loadbalancer.server.port=8080
