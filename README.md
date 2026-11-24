@@ -54,6 +54,33 @@ See [docker-compose.yml](docker-compose.yml)
    owasp/modsecurity
 4. You can you bypass the WAF and check attacks at http://localhost/bypass?test=../etc
 
+## Usage (Terraform / Traefik Helm chart, local plugin mode)
+
+This repo is also a Terraform module (`outputs.tf`) that exposes the plugin's files, so Traefik can
+load it as a local plugin from a ConfigMap rather than downloading it from GitHub at startup. That
+way a Traefik restart doesn't depend on GitHub, and this repo can be private.
+
+```hcl
+module "modsecurity_plugin" {
+  source = "git@github.com:flexys/traefik-modsecurity.git?ref=vX.Y.Z"
+}
+
+# Traefik Helm chart values
+experimental = {
+  localPlugins = {
+    traefik-modsecurity = {
+      moduleName = module.modsecurity_plugin.module_name
+      mountPath  = "/plugins-local/src/${module.modsecurity_plugin.module_name}"
+      type       = "inlinePlugin"
+      source     = module.modsecurity_plugin.inline_source
+    }
+  }
+}
+```
+
+If you add a runtime `.go` file (for example when merging from upstream), add it to
+`inline_source` in `outputs.tf`. CI fails the PR if you forget.
+
 ## How it works
 
 This is a very simple plugin that proxies the query to the owasp/modsecurity apache container.

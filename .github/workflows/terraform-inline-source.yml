@@ -1,0 +1,37 @@
+name: Terraform inline source
+
+# tf-module-traefik loads this plugin from module.<name>.inline_source (outputs.tf). If a new
+# .go file is added (e.g. when merging from upstream) but not listed there, Traefik would fail
+# to compile the plugin at startup - catch that here instead.
+
+on:
+  pull_request:
+    branches: [ "main", "master", "develop" ]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every runtime .go file is listed in outputs.tf
+        run: |
+          missing=0
+          for f in $(find . -maxdepth 1 -name '*.go' ! -name '*_test.go' -printf '%f\n'); do
+            if ! grep -q "\"$f\" *= *file(" outputs.tf; then
+              echo "::error file=outputs.tf::$f is not in inline_source"
+              missing=1
+            fi
+          done
+          if find . -mindepth 2 -name '*.go' ! -name '*_test.go' ! -path './vendor/*' ! -path './.git/*' | grep -q .; then
+            echo "::error::Runtime .go files in subdirectories can't be shipped via the flat inlinePlugin ConfigMap"
+            missing=1
+          fi
+          exit $missing
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Outputs evaluate
+        run: |
+          terraform init -backend=false -input=false
+          terraform plan -input=false
