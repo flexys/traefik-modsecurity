@@ -2,3 +2,8 @@
 
 # OpenSpec external knowledge — fetched on demand, not committed
 openspec/knowledge/external/
+
+# Terraform (outputs.tf)
+.terraform/
+.terraform.lock.hcl
+*.tfstate*
